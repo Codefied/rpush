@@ -1,13 +1,11 @@
 module Rpush
   module Daemon
     module Gcm
-
-      # http://developer.android.com/guide/google/gcm/gcm.html#response
       class Delivery < Rpush::Daemon::Delivery
         include MultiJsonHelper
 
-        host = ENV["RPUSH_GCM_HOST"] || "https://android.googleapis.com"
-        GCM_URI = URI.parse("#{host}/gcm/send")
+        host = 'https://fcm.googleapis.com'
+        FCM_URI = URI.parse("#{host}/fcm/send")
         UNAVAILABLE_STATES = ['Unavailable', 'InternalServerError']
         INVALID_REGISTRATION_ID_STATES = ['InvalidRegistration', 'MismatchSenderId', 'NotRegistered', 'InvalidPackageName']
 
@@ -31,18 +29,18 @@ module Rpush
 
         def handle_response(response)
           case response.code.to_i
-          when 200
-            ok(response)
-          when 400
-            bad_request
-          when 401
-            unauthorized
-          when 500
-            internal_server_error(response)
-          when 503
-            service_unavailable(response)
-          else
-            raise Rpush::DeliveryError.new(response.code, @notification.id, Rpush::Daemon::HTTP_STATUS_CODES[response.code.to_i])
+            when 200
+              ok(response)
+            when 400
+              bad_request
+            when 401
+              unauthorized
+            when 500
+              internal_server_error(response)
+            when 503
+              service_unavailable(response)
+            else
+              raise Rpush::DeliveryError.new(response.code, @notification.id, Rpush::Daemon::HTTP_STATUS_CODES[response.code.to_i])
           end
         end
 
@@ -103,7 +101,7 @@ module Rpush
           attrs = @notification.attributes.slice('app_id', 'collapse_key', 'delay_while_idle')
           registration_ids = @notification.registration_ids.values_at(*unavailable_idxs)
           Rpush::Daemon.store.create_gcm_notification(attrs, @notification.data,
-            registration_ids, deliver_after_header(response), @notification.app)
+                                                      registration_ids, deliver_after_header(response), @notification.app)
         end
 
         def bad_request
@@ -141,10 +139,10 @@ module Rpush
         end
 
         def do_post
-          post = Net::HTTP::Post.new(GCM_URI.path, initheader = {'Content-Type'  => 'application/json',
+          post = Net::HTTP::Post.new(FCM_URI.path, initheader = {'Content-Type'  => 'application/json',
                                                                  'Authorization' => "key=#{@notification.app.auth_key}"})
           post.body = @notification.as_json.to_json
-          @http.request(GCM_URI, post)
+          @http.request(FCM_URI, post)
         end
       end
 
@@ -165,8 +163,8 @@ module Rpush
 
           @results_data.each_with_index do |result, index|
             entry = {
-              registration_id: @registration_ids[index],
-              index: index
+                registration_id: @registration_ids[index],
+                index: index
             }
             if result['message_id']
               entry[:canonical_id] = result['registration_id'] if result['registration_id'].present?
