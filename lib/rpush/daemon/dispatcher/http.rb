@@ -5,7 +5,7 @@ module Rpush
         def initialize(app, delivery_class, options = {})
           @app = app
           @delivery_class = delivery_class
-          @http = Net::HTTP::Persistent::VERSION < 3 ? Net::HTTP::Persistent.new('rpush') : Net::HTTP::Persistent.new(name: 'rpush')
+          @http = Net::HTTP::Persistent::VERSION < '3' ? Net::HTTP::Persistent.new('rpush') : Net::HTTP::Persistent.new(name: 'rpush')
         end
 
         def dispatch(notification, batch)
