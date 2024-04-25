@@ -68,6 +68,9 @@ require 'rpush/daemon/adm'
 require 'rpush/daemon/pushy'
 require 'rpush/daemon/pushy/delivery'
 
+require 'rpush/daemon/webpush/delivery'
+require 'rpush/daemon/webpush'
+
 module Rpush
   module Daemon
     class << self
@@ -109,7 +112,7 @@ module Rpush
         Feeder.stop
         AppRunner.stop
         delete_pid_file
-        puts ANSI.green { '✔' } if Rpush.config.foreground
+        puts Rainbow('✔').red if Rpush.config.foreground && Rpush.config.foreground_logging
       end
     end
 
@@ -168,7 +171,7 @@ module Rpush
       if Rpush::Daemon::AppRunner.app_ids.count == 0
         puts <<-EOS
 
-* #{ANSI.green { 'Is this your first time using Rpush?' }}
+* #{Rainbow('Is this your first time using Rpush?').green}
   You need to create an App before you can start using Rpush.
   Please refer to the documentation at https://github.com/rpush/rpush
 

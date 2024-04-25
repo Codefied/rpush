@@ -1,5 +1,5 @@
 [![Gem Version](https://badge.fury.io/rb/rpush.svg)](http://badge.fury.io/rb/rpush)
-[![Build Status](https://travis-ci.org/rpush/rpush.svg?branch=master)](https://travis-ci.org/rpush/rpush)
+[![RPush Test](https://github.com/rpush/rpush/actions/workflows/test.yml/badge.svg)](https://github.com/rpush/rpush/actions/workflows/test.yml)
 [![Test Coverage](https://codeclimate.com/github/rpush/rpush/badges/coverage.svg)](https://codeclimate.com/github/rpush/rpush)
 [![Code Climate](https://codeclimate.com/github/rpush/rpush/badges/gpa.svg)](https://codeclimate.com/github/rpush/rpush)
 [![Join the chat at https://gitter.im/rpush/rpush](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/rpush/rpush?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
@@ -18,12 +18,13 @@ Rpush aims to be the *de facto* gem for sending push notifications in Ruby. Its 
   * [**Amazon Device Messaging**](#amazon-device-messaging)
   * [**Windows Phone Push Notification Service**](#windows-phone-notification-service)
   * [**Pushy**](#pushy)
+  * [**Webpush**](#webpush)
 
 #### Feature Highlights
 
-* Use [**ActiveRecord**](https://github.com/rpush/rpush/wiki/Using-ActiveRecord) or [**Redis**](https://github.com/rpush/rpush/wiki/Using-Redis) for storage. **Note:** Redis support for Rails 5.2 is not yet working if you're using Modis, see [this issue](https://github.com/ileitch/modis/issues/13).
+* Use [**ActiveRecord**](https://github.com/rpush/rpush/wiki/Using-ActiveRecord) or [**Redis**](https://github.com/rpush/rpush/wiki/Using-Redis) for storage.
 * Plugins for [**Bugsnag**](https://github.com/rpush/rpush-plugin-bugsnag),
-[**Sentry**](https://github.com/rpush/rpush-plugin-sentry), [**StatsD**](https://github.com/rpush/rpush-plugin-statsd) or [write your own](https://github.com/rpush/rpush/wiki/Writing-a-Plugin).
+[**Sentry**](https://github.com/rpush/rpush-plugin-sentry), [**StatsD**](https://github.com/rpush/rpush-plugin-statsd). Third party plugins: [**Prometheus Exporter**](https://github.com/equinux/rpush-plugin-prometheus-exporter). Or [write your own](https://github.com/rpush/rpush/wiki/Writing-a-Plugin).
 * Seamless integration with your projects, including **Rails**.
 * Run as a [daemon](https://github.com/rpush/rpush#as-a-daemon), inside a [job queue](https://github.com/rpush/rpush/wiki/Push-API), on the [command-line](https://github.com/rpush/rpush#on-the-command-line) or [embedded](https://github.com/rpush/rpush/wiki/Embedding-API) in another process.
 * Scales vertically (threading) and horizontally (multiple processes).
@@ -52,8 +53,70 @@ $ bundle exec rpush init
 
 #### Apple Push Notification Service
 
+There is a choice of two modes (and one legacy mode) using certificates or using tokens:
 
-If this is your first time using the APNs, you will need to generate SSL certificates. See [Generating Certificates](https://github.com/rpush/rpush/wiki/Generating-Certificates) for instructions.
+* `Rpush::Apns2` This requires an annually renewable certificate. see https://developer.apple.com/documentation/usernotifications/setting_up_a_remote_notification_server/establishing_a_certificate-based_connection_to_apns
+* `Rpush::Apnsp8` This uses encrypted tokens and requires an encryption key id and encryption key (provide as a p8 file). (see https://developer.apple.com/documentation/usernotifications/setting_up_a_remote_notification_server/establishing_a_token-based_connection_to_apns)
+* `Rpush::Apns` There is also the original APNS (the original version using certificates with a binary underlying protocol over TCP directly rather than over Http/2).
+  Apple have [announced](https://developer.apple.com/news/?id=c88acm2b) that this is not supported after March 31, 2021.
+
+If this is your first time using the APNs, you will need to generate either SSL certificates (for Apns2 or Apns) or an Encryption Key (p8) and an Encryption Key ID (for Apnsp8). See [Generating Certificates](https://github.com/rpush/rpush/wiki/Generating-Certificates) for instructions.
+
+##### Apnsp8
+
+To use the p8 APNs Api:
+
+```ruby
+app = Rpush::Apnsp8::App.new
+app.name = "ios_app"
+app.apn_key = File.read("/path/to/sandbox.p8")
+app.environment = "development" # APNs environment.
+app.apn_key_id = "APN KEY ID" # This is the Encryption Key ID provided by apple
+app.team_id = "TEAM ID" # the team id - e.g. ABCDE12345
+app.bundle_id = "BUNDLE ID" # the unique bundle id of the app, like com.example.appname
+app.connections = 1
+app.save!
+```
+
+```ruby
+n = Rpush::Apnsp8::Notification.new
+n.app = Rpush::Apnsp8::App.find_by_name("ios_app")
+n.device_token = "..." # hex string
+n.alert = "hi mom!"
+n.data = { foo: :bar }
+n.save!
+```
+
+##### Apns2
+
+(NB this uses the same protocol as Apnsp8, but authenticates with a certificate rather than tokens)
+
+```ruby
+app = Rpush::Apns2::App.new
+app.name = "ios_app"
+app.certificate = File.read("/path/to/sandbox.pem")
+app.environment = "development"
+app.password = "certificate password"
+app.bundle_id = "BUNDLE ID" # the unique bundle id of the app, like com.example.appname
+app.connections = 1
+app.save!
+```
+
+```ruby
+n = Rpush::Apns2::Notification.new
+n.app = Rpush::Apns2::App.find_by_name("ios_app")
+n.device_token = "..." # hex string
+n.alert = "hi mom!"
+n.data = {
+  headers: { 'apns-topic': "BUNDLE ID" }, # the bundle id of the app, like com.example.appname. Not necessary if set on the app (see above)
+  foo: :bar
+}
+n.save!
+```
+
+You should also implement the [ssl_certificate_will_expire](https://github.com/rpush/rpush/wiki/Reflection-API) reflection to monitor when your certificate is due to expire.
+
+##### Apns (legacy protocol)
 
 ```ruby
 app = Rpush::Apns::App.new
@@ -74,34 +137,14 @@ n.data = { foo: :bar }
 n.save!
 ```
 
-The `url_args` attribute is available for Safari Push Notifications.
+##### Safari Push Notifications
 
-You should also implement the [ssl_certificate_will_expire](https://github.com/rpush/rpush/wiki/Reflection-API) reflection to monitor when your certificate is due to expire.
+Using one of the notifications methods above, the `url_args` attribute is available for Safari Push Notifications.
 
-To use the newer APNs Api replace `Rpush::Apns::App` with `Rpush::Apns2::App`.
+##### Environment
 
-To use the p8 APNs Api replace `Rpush::Apns::App` with `Rpush::Apnsp8::App`.
+The app `environment` for any Apns* option is "development" for XCode installs, and "production" for app store and TestFlight. Note that for Apns2 you can now use one (production + sandbox) certificate (you don't need a separate "sandbox" or development certificate), but if you do generate a development/sandbox certificate it can only be used for "development". With Apnsp8 tokens, you can target either "development" or "production" environments.
 
-```ruby
-app = Rpush::Apnsp8::App.new
-app.name = "ios_app"
-app.apn_key = File.read("/path/to/sandbox.p8")
-app.environment = "development" # APNs environment.
-app.apn_key_id = "APN KEY ID"
-app.team_id = "TEAM ID"
-app.bundle_id = "BUNDLE ID"
-app.connections = 1
-app.save!
-```
-
-```ruby
-n = Rpush::Apns::Notification.new
-n.app = Rpush::Apnsp8::App.find_by_name("ios_app")
-n.device_token = "..." # hex string
-n.alert = "hi mom!"
-n.data = { foo: :bar }
-n.save!
-```
 #### Firebase Cloud Messaging
 
 FCM and GCM are – as of writing – compatible with each other. See also [this comment](https://github.com/rpush/rpush/issues/284#issuecomment-228330206) for further references.
@@ -208,7 +251,7 @@ n.save!
 
 #### Windows Raw Push Notifications
 
-Note: The data is passed as `.to_json` so only this format is supported, altough raw notifications are meant to support any kind of data.
+Note: The data is passed as `.to_json` so only this format is supported, although raw notifications are meant to support any kind of data.
 Current data structure enforces hashes and `.to_json` representation is natural presentation of it.
 
 ```ruby
@@ -255,6 +298,49 @@ n.save!
 ```
 
 For more documentation on [Pushy](https://pushy.me/docs).
+
+#### Webpush
+
+[Webpush](https://tools.ietf.org/html/draft-ietf-webpush-protocol-10) is a
+protocol for delivering push messages to desktop browsers. It's supported by
+all major browsers (except Safari, you have to use one of the Apns transports
+for that).
+
+Using [VAPID](https://tools.ietf.org/html/draft-ietf-webpush-vapid-01), there
+is no need for the sender of push notifications to register upfront with push
+services (as was the case with the now legacy Mozilla or Google desktop push
+providers).
+
+Instead, you generate a pair of keys and use the public key when subscribing
+users in your web app. The keys are stored along with an email address (which,
+according to the spec, can be used by push service providers to contact you in
+case of problems) in the `certificates` field of the Rpush Application record:
+
+```ruby
+vapid_keypair = Webpush.generate_key.to_hash
+app = Rpush::Webpush::App.new
+app.name = 'webpush'
+app.certificate = vapid_keypair.merge(subject: 'user@example.org').to_json
+app.connections = 1
+app.save!
+```
+
+The `subscription` object you obtain from a subscribed browser holds an
+endpoint URL and cryptographic keys. When sending a notification, simply pass
+the whole subscription as sole member of the `registration_ids` collection:
+
+```ruby
+n = Rpush::Webpush::Notification.new
+n.app = Rpush::App.find_by_name("webpush")
+n.registration_ids = [subscription]
+n.data = { message: "hi mom!" }
+n.save!
+```
+
+In order to send the same message to multiple devices, create one
+`Notification` per device, as passing multiple subscriptions at once as
+`registration_ids` is not supported.
+
 
 ### Running Rpush
 

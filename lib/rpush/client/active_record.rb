@@ -5,6 +5,7 @@ require 'rpush/client/active_model'
 require 'rpush/client/active_record/notification'
 require 'rpush/client/active_record/app'
 
+require 'rpush/client/active_record/apns/active_record_serializable_notification'
 require 'rpush/client/active_record/apns/notification'
 require 'rpush/client/active_record/apns/feedback'
 require 'rpush/client/active_record/apns/app'
@@ -31,3 +32,6 @@ require 'rpush/client/active_record/adm/app'
 
 require 'rpush/client/active_record/pushy/notification'
 require 'rpush/client/active_record/pushy/app'
+
+require 'rpush/client/active_record/webpush/notification'
+require 'rpush/client/active_record/webpush/app'

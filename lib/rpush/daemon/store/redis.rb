@@ -17,7 +17,7 @@ module Rpush
           limit -= retryable_ids.size
           pending_ids = limit > 0 ? pending_notification_ids(limit) : []
           ids = retryable_ids + pending_ids
-          ids.map { |id| Rpush::Client::Redis::Notification.find(id) }
+          ids.map { |id| find_notification_by_id(id) }.compact
         end
 
         def mark_delivered(notification, time, opts = {})
@@ -49,7 +49,12 @@ module Rpush
         end
 
         def mark_ids_failed(ids, code, description, time)
-          ids.each { |id| mark_failed(Rpush::Client::Redis::Notification.find(id), code, description, time) }
+          ids.each do |id|
+            notification = find_notification_by_id(id)
+            next unless notification
+
+            mark_failed(notification, code, description, time)
+          end
         end
 
         def mark_retryable(notification, deliver_after, opts = {})
@@ -75,7 +80,12 @@ module Rpush
         end
 
         def mark_ids_retryable(ids, deliver_after)
-          ids.each { |id| mark_retryable(Rpush::Client::Redis::Notification.find(id), deliver_after) }
+          ids.each do |id|
+            notification = find_notification_by_id(id)
+            next unless notification
+
+            mark_retryable(notification, deliver_after)
+          end
         end
 
         def create_apns_feedback(failed_at, device_token, app)
@@ -121,7 +131,14 @@ module Rpush
 
         private
 
-        def create_gcm_like_notification(notification, attrs, data, registration_ids, deliver_after, app) # rubocop:disable ParameterLists
+        def find_notification_by_id(id)
+          Rpush::Client::Redis::Notification.find(id)
+        rescue Modis::RecordNotFound
+          Rpush.logger.warn("Couldn't find Rpush::Client::Redis::Notification with id=#{id}")
+          nil
+        end
+
+        def create_gcm_like_notification(notification, attrs, data, registration_ids, deliver_after, app) # rubocop:disable Metrics/ParameterLists
           notification.assign_attributes(attrs)
           notification.data = data
           notification.registration_ids = registration_ids
@@ -135,10 +152,10 @@ module Rpush
           retryable_ns = Rpush::Client::Redis::Notification.absolute_retryable_namespace
 
           Modis.with_connection do |redis|
-            retryable_results = redis.multi do
+            retryable_results = redis.multi do |transaction|
               now = Time.now.to_i
-              redis.zrangebyscore(retryable_ns, 0, now)
-              redis.zremrangebyscore(retryable_ns, 0, now)
+              transaction.zrangebyscore(retryable_ns, 0, now)
+              transaction.zremrangebyscore(retryable_ns, 0, now)
             end
 
             retryable_results.first
@@ -150,9 +167,9 @@ module Rpush
           pending_ns = Rpush::Client::Redis::Notification.absolute_pending_namespace
 
           Modis.with_connection do |redis|
-            pending_results = redis.multi do
-              redis.zrange(pending_ns, 0, limit)
-              redis.zremrangebyrank(pending_ns, 0, limit)
+            pending_results = redis.multi do |transaction|
+              transaction.zrange(pending_ns, 0, limit)
+              transaction.zremrangebyrank(pending_ns, 0, limit)
             end
 
             pending_results.first
