@@ -7,15 +7,10 @@ Gem::Specification.new do |s|
   s.version     = Rpush::VERSION
   s.authors     = ["Ian Leitch"]
   s.email       = ["port001@gmail.com"]
-  s.homepage    = "https://github.com/rpush/rpush"
+  s.homepage    = "https://github.com/Codefied/rpush"
   s.summary     = 'The push notification service for Ruby.'
   s.description = 'The push notification service for Ruby.'
   s.license     = 'MIT'
-  s.metadata    = {
-    "bug_tracker_uri" => "https://github.com/rpush/rpush/issues",
-    "changelog_uri" => "https://github.com/rpush/rpush/blob/master/CHANGELOG.md",
-    "source_code_uri" => "https://github.com/rpush/rpush"
-  }
 
   s.files         = `git ls-files -- lib README.md CHANGELOG.md LICENSE`.split("\n")
   s.test_files    = `git ls-files -- {test,spec,features}`.split("\n")
