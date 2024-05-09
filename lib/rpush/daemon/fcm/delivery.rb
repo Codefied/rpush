@@ -5,20 +5,19 @@ module Rpush
       class Delivery < Rpush::Daemon::Delivery
         include MultiJsonHelper
 
-        HOST = 'https://fcm.googleapis.com'.freeze
+        JSON_PRIVATE_KEY = Base64.strict_decode64(Settings.firebase.fcm_push_notification.base64_private_key)
+        PROJECT_ID = Settings.firebase.fcm_push_notification.project_id
+        AUTH_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging'.freeze
         SCOPE = 'https://www.googleapis.com/auth/firebase.messaging'.freeze
+        ENDPOINT = "https://fcm.googleapis.com/v1/projects/#{PROJECT_ID}/messages:send".freeze
 
         def initialize(app, http, notification, batch)
-          if necessary_data_exists?
-            @app = app
-            @http = http
-            @notification = notification
-            @batch = batch
+          @app = app
+          @http = http
+          @notification = notification
+          @batch = batch
 
-            @uri = URI.parse("#{HOST}/v1/projects/#{ENV['FIREBASE_PROJECT_ID']}/messages:send")
-          else
-            Rpush.logger.error("Cannot find necessary configuration! Please make sure you have set all necessary ENV variables!")
-          end
+          @uri = URI.parse(ENDPOINT)
         end
 
         def perform
@@ -131,28 +130,22 @@ module Rpush
           "Notification #{@notification.id} will be retried after #{@notification.deliver_after.strftime('%Y-%m-%d %H:%M:%S')} (retry #{@notification.retries})."
         end
 
-        def obtain_access_token
-          authorizer = ::Google::Auth::ServiceAccountCredentials.make_creds(scope: SCOPE)
-          authorizer.fetch_access_token
+        def get_access_token # rubocop:todo Naming/AccessorMethodName
+          credentials = Google::Auth::ServiceAccountCredentials.make_creds(
+            json_key_io: StringIO.new(JSON_PRIVATE_KEY),
+            scope: AUTH_SCOPE
+          )
+
+          token_response = credentials.fetch_access_token!
+          token_response['access_token']
         end
 
         def do_post
-          token = obtain_access_token['access_token']
+          token = get_access_token
           post = Net::HTTP::Post.new(@uri.path, 'Content-Type'  => 'application/json',
                                      'Authorization' => "Bearer #{token}")
           post.body = @notification.as_json.to_json
           @http.request(@uri, post)
-        end
-
-        def necessary_data_exists?
-          # Needed for Google Auth
-          # See https://github.com/googleapis/google-auth-library-ruby#example-environment-variables
-          # for further information
-          ENV.key?('FIREBASE_PROJECT_ID') &&
-            ENV.key?('GOOGLE_ACCOUNT_TYPE') &&
-            ENV.key?('GOOGLE_CLIENT_ID') &&
-            ENV.key?('GOOGLE_CLIENT_EMAIL') &&
-            ENV.key?('GOOGLE_PRIVATE_KEY')
         end
       end
     end
