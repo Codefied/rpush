@@ -5,10 +5,7 @@ module Rpush
       class Delivery < Rpush::Daemon::Delivery
         include MultiJsonHelper
 
-        JSON_PRIVATE_KEY = Base64.strict_decode64(Settings.firebase.fcm_push_notification.base64_private_key)
         PROJECT_ID = Settings.firebase.fcm_push_notification.project_id
-        AUTH_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging'.freeze
-        SCOPE = 'https://www.googleapis.com/auth/firebase.messaging'.freeze
         ENDPOINT = "https://fcm.googleapis.com/v1/projects/#{PROJECT_ID}/messages:send".freeze
 
         def initialize(app, http, notification, batch)
@@ -130,20 +127,9 @@ module Rpush
           "Notification #{@notification.id} will be retried after #{@notification.deliver_after.strftime('%Y-%m-%d %H:%M:%S')} (retry #{@notification.retries})."
         end
 
-        def get_access_token # rubocop:todo Naming/AccessorMethodName
-          credentials = Google::Auth::ServiceAccountCredentials.make_creds(
-            json_key_io: StringIO.new(JSON_PRIVATE_KEY),
-            scope: AUTH_SCOPE
-          )
-
-          token_response = credentials.fetch_access_token!
-          token_response['access_token']
-        end
-
         def do_post
-          token = get_access_token
           post = Net::HTTP::Post.new(@uri.path, 'Content-Type'  => 'application/json',
-                                     'Authorization' => "Bearer #{token}")
+                                     'Authorization' => "Bearer #{@app.access_token}")
           post.body = @notification.as_json.to_json
           @http.request(@uri, post)
         end

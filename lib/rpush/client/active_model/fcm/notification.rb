@@ -11,7 +11,7 @@ module Rpush
           ANDROID_NOTIFICATION_KEYS = %w[icon tag color click_action body_loc_key body_loc_args title_loc_key
                                          title_loc_args channel_id ticker sticky event_time local_only
                                          default_vibrate_timings default_light_settings vibrate_timings
-                                         visibility notification_count light_settings].freeze
+                                         visibility notification_count light_settings sound].freeze
 
           def self.included(base)
             base.instance_eval do
@@ -76,8 +76,18 @@ module Rpush
             json
           end
 
+          def notification=(value)
+            super(value.with_indifferent_access)
+          end
+
+          def root_notification
+            return {} unless notification
+
+            notification.slice(*ROOT_NOTIFICATION_KEYS)
+          end
+
           def android_notification
-            json = notification || {}
+            json = notification&.slice(*ANDROID_NOTIFICATION_KEYS) || {}
             json['notification_priority'] = priority_for_notification if priority
             json['sound'] = sound if sound
             json['default_sound'] = !sound || sound == 'default' ? true : false
