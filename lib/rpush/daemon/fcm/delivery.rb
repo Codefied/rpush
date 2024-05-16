@@ -63,47 +63,52 @@ module Rpush
         def ok
           reflect(:fcm_delivered_to_recipient, @notification)
           mark_delivered
-          log_info("#{@notification.id} sent to #{@notification.device_token}")
+          log_info("FCM: #{@notification.id} sent to #{@notification.device_token}")
         end
 
         def bad_request(response)
-          fail Rpush::DeliveryError.new(400, @notification.id, "FCM failed to handle the JSON request. (#{parse_error(response)})")
+          error = parse_error(response)
+          reflect(:fcm_bad_request, @notification.id, error)
+          fail Rpush::DeliveryError.new(400, @notification.id, "FCM: failed to handle the JSON request. (#{error})")
         end
 
         def unauthorized
-          fail Rpush::DeliveryError.new(401, @notification.id, 'Unauthorized, Bearer token could not be validated.')
+          reflect(:fcm_unauthorized, @notification.id, 'FCM: Bearer token could not be validated.')
+          fail Rpush::DeliveryError.new(401, @notification.id, 'FCM: Unauthorized, Bearer token could not be validated.')
         end
 
         def sender_id_mismatch
-          fail Rpush::DeliveryError.new(403, @notification.id, 'The sender ID was mismatched. It seems the device token is wrong.')
+          fail Rpush::DeliveryError.new(403, @notification.id, 'FCM: The sender ID was mismatched. It seems the device token is wrong.')
         end
 
         def unregistered(response)
-          fail Rpush::DeliveryError.new(404, @notification.id, "Client was not registered for your app. (#{parse_error(response)})")
+          error = parse_error(response)
+          reflect(:fcm_invalid_device_token, @app, error, @notification.device_token)
+          fail Rpush::DeliveryError.new(404, @notification.id, "FCM: Client was not registered for your app. (#{error})")
         end
 
         def too_many_requests
-          fail Rpush::DeliveryError.new(429, @notification.id, 'Slow down. Too many requests were sent!')
+          fail Rpush::DeliveryError.new(429, @notification.id, 'FCM: Slow down. Too many requests were sent!')
         end
 
         def internal_server_error(response)
           retry_delivery(@notification, response)
-          log_warn("FCM responded with an Internal Error. " + retry_message)
+          log_warn("FCM: responded with an Internal Error. " + retry_message)
         end
 
         def bad_gateway(response)
           retry_delivery(@notification, response)
-          log_warn("FCM responded with a Bad Gateway Error. " + retry_message)
+          log_warn("FCM: responded with a Bad Gateway Error. " + retry_message)
         end
 
         def service_unavailable(response)
           retry_delivery(@notification, response)
-          log_warn("FCM responded with an Service Unavailable Error. " + retry_message)
+          log_warn("FCM: responded with an Service Unavailable Error. " + retry_message)
         end
 
         def other_5xx_error(response)
           retry_delivery(@notification, response)
-          log_warn("FCM responded with a 5xx Error. " + retry_message)
+          log_warn("FCM: responded with a 5xx Error. " + retry_message)
         end
 
         def parse_error(response)
