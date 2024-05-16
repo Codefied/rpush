@@ -5,16 +5,18 @@ module Rpush
       class Delivery < Rpush::Daemon::Delivery
         include MultiJsonHelper
 
-        PROJECT_ID = Settings.firebase.fcm_push_notification.project_id
-        ENDPOINT = "https://fcm.googleapis.com/v1/projects/#{PROJECT_ID}/messages:send".freeze
+        # Assuming tokens are valid for 50 minutes
+        TOKEN_VALID_FOR_SEC = 60 * 50
+        AUTH_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging'
 
         def initialize(app, http, notification, batch)
           @app = app
           @http = http
           @notification = notification
           @batch = batch
-
-          @uri = URI.parse(ENDPOINT)
+          @json_private_key = Base64.strict_decode64(app.fcm_json_token)
+          project_id = JSON.parse(@json_private_key)['project_id']
+          @uri = URI.parse("https://fcm.googleapis.com/v1/projects/#{project_id}/messages:send")
         end
 
         def perform
@@ -127,9 +129,32 @@ module Rpush
           "Notification #{@notification.id} will be retried after #{@notification.deliver_after.strftime('%Y-%m-%d %H:%M:%S')} (retry #{@notification.retries})."
         end
 
+        def obtain_access_token
+          if fetch_access_token?
+            token = fetch_access_token
+            @app.update(fcm_access_token: token, fcm_access_token_expiration: Time.zone.now + TOKEN_VALID_FOR_SEC)
+          end
+          @app.fcm_access_token
+        end
+
+        def fetch_access_token?
+          @app.fcm_access_token.nil? || @app.fcm_access_token_expiration.nil? || @app.fcm_access_token_expiration < Time.zone.now
+        end
+
+        def fetch_access_token
+          credentials = Google::Auth::ServiceAccountCredentials.make_creds(
+            json_key_io: StringIO.new(@json_private_key),
+            scope: AUTH_SCOPE
+          )
+
+          token_response = credentials.fetch_access_token!
+          token_response['access_token']
+        end
+
         def do_post
+          token = obtain_access_token
           post = Net::HTTP::Post.new(@uri.path, 'Content-Type'  => 'application/json',
-                                     'Authorization' => "Bearer #{@app.access_token}")
+                                     'Authorization' => "Bearer #{token}")
           post.body = @notification.as_json.to_json
           @http.request(@uri, post)
         end

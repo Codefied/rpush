@@ -19,7 +19,6 @@ module Rpush
               validates :priority, inclusion: { in: FCM_PRIORITIES }, allow_nil: true
 
               validates_with Rpush::Client::ActiveModel::PayloadDataSizeValidator, limit: 4096
-              validates_with Rpush::Client::ActiveModel::RegistrationIdsCountValidator, limit: 1000
 
               validates_with Rpush::Client::ActiveModel::Fcm::ExpiryCollapseKeyMutualInclusionValidator
               validates_with Rpush::Client::ActiveModel::Fcm::NotificationKeysInAllowedListValidator
@@ -52,28 +51,22 @@ module Rpush
             fail ArgumentError, 'RPush does not currently support mutable_content for FCM' if value
           end
 
-          def as_json(options = nil) # rubocop:disable Metrics/PerceivedComplexity
+          def as_json(options = nil)
             json = {
               'data' => data,
               'android' => android_config,
               'token' => device_token
             }
-            # Android does not appear to handle content_available anymore. Instead "priority" should be used
-            # with "low" being a background only message. APN however should support this field.
-            # json['content_available'] = content_available if content_available
             json['notification'] = root_notification if notification
             { 'message' => json }
           end
 
           def android_config
-            json = {
-              'notification' => android_notification,
+            {
+              'collapse_key' => (collapse_key if collapse_key),
+              'priority' => (priority_str if priority),
+              'ttl' => ("#{expiry}s" if expiry)
             }
-            json['data'] = data if data
-            json['collapse_key'] = collapse_key if collapse_key
-            json['priority'] = priority_str if priority
-            json['ttl'] = "#{expiry}s" if expiry
-            json
           end
 
           def notification=(value)
@@ -86,32 +79,11 @@ module Rpush
             notification.slice(*ROOT_NOTIFICATION_KEYS)
           end
 
-          def android_notification
-            json = notification&.slice(*ANDROID_NOTIFICATION_KEYS) || {}
-            json['notification_priority'] = priority_for_notification if priority
-            json['sound'] = sound if sound
-            json['default_sound'] = !sound || sound == 'default' ? true : false
-            json
-          end
-
           def priority_str
             case
             when priority <= 5 then 'normal'
             else
               'high'
-            end
-          end
-
-          def priority_for_notification
-            case priority
-            when 0 then 'PRIORITY_UNSPECIFIED'
-            when 1 then 'PRIORITY_MIN'
-            when 2 then 'PRIORITY_LOW'
-            when 5 then 'PRIORITY_DEFAULT'
-            when 6 then 'PRIORITY_HIGH'
-            when 10 then 'PRIORITY_MAX'
-            else
-              'PRIORITY_DEFAULT'
             end
           end
         end
